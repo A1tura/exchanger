@@ -42,49 +42,52 @@ impl OrderBook {
             asks: Vec::new(),
         };
 
-        if let Some(d) = depth {
-            let bids_depth = std::cmp::min(self.bids.len(), d);
-            let asks_depth = std::cmp::min(self.asks.len(), d);
+        let d = match depth {
+            Some(d) => d,
+            None => std::cmp::max(self.bids.len(), self.asks.len()),
+        };
 
-            for (i, price) in self.bids.keys().enumerate() {
-                if i > bids_depth {
-                    break;
-                }
+        let bids_depth = std::cmp::min(self.bids.len(), d);
+        let asks_depth = std::cmp::min(self.asks.len(), d);
 
-                let mut level = Level {
-                    price: price.as_float(),
-                    total_quantity: 0,
-                };
-
-                let orders = self.bids.get(&price).unwrap();
-                for order_id in orders.iter() {
-                    for order in self.orders.get(order_id) {
-                        level.total_quantity += order.order.quantity;
-                    }
-                }
-
-                snapshot.bids.push(level);
+        for (i, price) in self.bids.keys().enumerate() {
+            if i > bids_depth {
+                break;
             }
 
-            for (i, price) in self.asks.keys().enumerate() {
-                if i > bids_depth {
-                    break;
+            let mut level = Level {
+                price: price.as_float(),
+                total_quantity: 0,
+            };
+
+            let orders = self.bids.get(&price).unwrap();
+            for order_id in orders.iter() {
+                for order in self.orders.get(order_id) {
+                    level.total_quantity += order.order.quantity;
                 }
-
-                let mut level = Level {
-                    price: price.as_float(),
-                    total_quantity: 0,
-                };
-
-                let orders = self.asks.get(&price).unwrap();
-                for order_id in orders.iter() {
-                    for order in self.orders.get(order_id) {
-                        level.total_quantity += order.order.quantity;
-                    }
-                }
-
-                snapshot.asks.push(level);
             }
+
+            snapshot.bids.push(level);
+        }
+
+        for (i, price) in self.asks.keys().enumerate() {
+            if i > bids_depth {
+                break;
+            }
+
+            let mut level = Level {
+                price: price.as_float(),
+                total_quantity: 0,
+            };
+
+            let orders = self.asks.get(&price).unwrap();
+            for order_id in orders.iter() {
+                for order in self.orders.get(order_id) {
+                    level.total_quantity += order.order.quantity;
+                }
+            }
+
+            snapshot.asks.push(level);
         }
 
         return snapshot;
