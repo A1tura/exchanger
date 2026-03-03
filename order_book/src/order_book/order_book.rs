@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, VecDeque},
     fmt::{self, Display},
 };
 
@@ -20,8 +20,8 @@ pub struct Snapshot {
 
 #[derive(Debug)]
 pub struct OrderBook {
-    pub bids: BTreeMap<Price, Vec<u32>>,
-    pub asks: BTreeMap<Price, Vec<u32>>,
+    pub bids: BTreeMap<Price, VecDeque<u32>>,
+    pub asks: BTreeMap<Price, VecDeque<u32>>,
 
     pub orders: HashMap<u32, Order>,
 }
@@ -71,7 +71,7 @@ impl OrderBook {
         }
 
         for (i, price) in self.asks.keys().enumerate() {
-            if i > bids_depth {
+            if i > asks_depth {
                 break;
             }
 
@@ -93,9 +93,9 @@ impl OrderBook {
         return snapshot;
     }
 
-    pub fn submit_order(&mut self, orderReq: &OrderReq) -> u32 {
-        let mut order = Order::new(orderReq.clone());
-        match orderReq.order_type {
+    pub fn submit_order(&mut self, order_req: &OrderReq) -> u32 {
+        let mut order = Order::new(order_req.clone());
+        match order_req.order_type {
             Type::Limit => self.execute_limit(&mut order),
             Type::Market => self.match_order(&mut order),
         }
@@ -161,10 +161,10 @@ impl OrderBook {
                     self.bids
                         .get_mut(&order.order.price)
                         .unwrap()
-                        .push(order.id);
+                        .push_back(order.id);
                 } else {
-                    let mut orders: Vec<u32> = Vec::new();
-                    orders.push(order.id);
+                    let mut orders: VecDeque<u32> = VecDeque::new();
+                    orders.push_back(order.id);
                     self.bids.insert(order.order.price.clone(), orders);
                 }
             }
@@ -173,10 +173,10 @@ impl OrderBook {
                     self.asks
                         .get_mut(&order.order.price)
                         .unwrap()
-                        .push(order.id);
+                        .push_back(order.id);
                 } else {
-                    let mut orders: Vec<u32> = Vec::new();
-                    orders.push(order.id);
+                    let mut orders: VecDeque<u32> = VecDeque::new();
+                    orders.push_back(order.id);
                     self.asks.insert(order.order.price.clone(), orders);
                 }
             }
@@ -186,28 +186,36 @@ impl OrderBook {
     fn match_order(&mut self, order: &mut Order) {
         match &order.order.side {
             Side::Bid => {
-                let best_ask_id = self.get_best_ask();
-                let mut best_ask = self.orders.get_mut(&best_ask_id).unwrap();
-                if (order.order.order_type == Type::Limit
-                    && best_ask.order.price <= order.order.price)
-                    || order.order.order_type == Type::Market
-                {
-                    if best_ask.order.quantity > 0 {
-                        if best_ask.order.quantity > order.order.quantity {
-                            best_ask.order.quantity -= order.order.quantity;
-                            order.order.quantity = 0;
-                        } else {
-                            order.order.quantity -= best_ask.order.quantity;
-                            self.asks.pop_first();
-                            self.remove_order(&order);
+                while order.order.quantity != 0 && !self.asks.is_empty() {
+                    let best_ask_id = self.get_best_ask();
+                    let best_ask = self.orders.get_mut(&best_ask_id).unwrap();
+                    if (order.order.order_type == Type::Limit
+                        && best_ask.order.price <= order.order.price)
+                        || order.order.order_type == Type::Market
+                    {
+                        if best_ask.order.quantity > 0 {
+                            if best_ask.order.quantity > order.order.quantity {
+                                best_ask.order.quantity -= order.order.quantity;
+                                order.order.quantity = 0;
+                            } else {
+                                order.order.quantity -= best_ask.order.quantity;
+                                let level = self.asks.get_mut(&best_ask.order.price).unwrap();
+                                level.pop_front();
+                                if level.is_empty() {
+                                    self.asks.remove(&best_ask.order.price);
+                                }
+                                self.orders.remove(&best_ask_id);
+                            }
                         }
+                    } else {
+                        break;
                     }
                 }
             }
             Side::Ask => {
                 while order.order.quantity != 0 && !self.bids.is_empty() {
                     let best_bid_id = self.get_best_bid();
-                    let mut best_bid = self.orders.get_mut(&best_bid_id).unwrap();
+                    let best_bid = self.orders.get_mut(&best_bid_id).unwrap();
                     if (order.order.order_type == Type::Limit
                         && best_bid.order.price >= order.order.price)
                         || order.order.order_type == Type::Market
@@ -218,8 +226,14 @@ impl OrderBook {
                                 order.order.quantity = 0;
                             } else {
                                 order.order.quantity -= best_bid.order.quantity;
-                                self.bids.pop_last();
-                                self.remove_order(&order);
+                                let level = self.bids.get_mut(&best_bid.order.price).unwrap();
+                                level.pop_front();
+
+                                if level.is_empty() {
+                                    self.bids.remove(&best_bid.order.price);
+                                }
+
+                                self.orders.remove(&best_bid_id);
                             }
                         }
                     } else {
@@ -228,10 +242,6 @@ impl OrderBook {
                 }
             }
         }
-    }
-
-    fn remove_order(&mut self, order: &Order) {
-        self.orders.remove(&order.id);
     }
 
     pub fn get_best_bid(&self) -> u32 {
