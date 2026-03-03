@@ -25,7 +25,10 @@ impl OrderBook {
     pub fn submit_order(&mut self, order: &mut Order) {
         match order.order_type {
             Type::Limit => self.execute_limit(order),
-            Type::Market => self.match_order(order),
+            Type::Market => {
+                order.price.price = 0;
+                self.match_order(order);
+            }
         }
     }
 
@@ -37,7 +40,7 @@ impl OrderBook {
         }
 
         if order.quantity == 0 {
-            return
+            return;
         }
 
         self.orders.insert(order.id, order.clone());
