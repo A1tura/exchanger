@@ -1,10 +1,9 @@
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::{self, Display},
-    mem::forget,
 };
 
-use crate::order::{Order, Price, Side, Type};
+use crate::order::{Order, OrderReq, Price, Side, Type};
 use crate::order_book::OrderBookErrors;
 
 pub struct OrderBook {
@@ -24,24 +23,27 @@ impl OrderBook {
         }
     }
 
-    pub fn submit_order(&mut self, order: &mut Order) {
-        match order.order_type {
-            Type::Limit => self.execute_limit(order),
-            Type::Market => self.match_order(order),
+    pub fn submit_order(&mut self, orderReq: &OrderReq) -> u32 {
+        let mut order = Order::new(orderReq.clone());
+        match orderReq.order_type {
+            Type::Limit => self.execute_limit(&mut order),
+            Type::Market => self.match_order(&mut order),
         }
+
+        return order.id;
     }
 
     pub fn cancel_order(&mut self, order_id: &u32) -> Result<(), OrderBookErrors> {
         match self.orders.get_mut(order_id) {
             Some(order) => {
-                match order.side {
+                match order.order.side {
                     Side::Bid => {
-                        if self.bids.get(&order.price).unwrap().len() == 1 {
-                            self.bids.remove(&order.price);
+                        if self.bids.get(&order.order.price).unwrap().len() == 1 {
+                            self.bids.remove(&order.order.price);
                             return Ok(());
                         }
 
-                        let book = self.bids.get_mut(&order.price).unwrap();
+                        let book = self.bids.get_mut(&order.order.price).unwrap();
 
                         for i in 0..book.len() {
                             if book[i] == *order_id {
@@ -50,12 +52,12 @@ impl OrderBook {
                         }
                     }
                     Side::Ask => {
-                        if self.asks.get(&order.price).unwrap().len() == 1 {
-                            self.asks.remove(&order.price);
+                        if self.asks.get(&order.order.price).unwrap().len() == 1 {
+                            self.asks.remove(&order.order.price);
                             return Ok(());
                         }
 
-                        let book = self.asks.get_mut(&order.price).unwrap();
+                        let book = self.asks.get_mut(&order.order.price).unwrap();
                         for i in 0..book.len() {
                             if book[i] == *order_id {
                                 book.remove(i);
@@ -72,53 +74,53 @@ impl OrderBook {
     }
 
     fn execute_limit(&mut self, order: &mut Order) {
-        if (self.asks.len() >= 1 && order.side == Side::Bid)
-            || (self.bids.len() >= 1 && order.side == Side::Ask)
+        if (self.asks.len() >= 1 && order.order.side == Side::Bid)
+            || (self.bids.len() >= 1 && order.order.side == Side::Ask)
         {
             self.match_order(order);
         }
 
-        if order.quantity == 0 {
+        if order.order.quantity == 0 {
             return;
         }
 
         self.orders.insert(order.id, order.clone());
-        match &order.side {
+        match &order.order.side {
             Side::Bid => {
-                if self.bids.contains_key(&order.price) {
-                    self.bids.get_mut(&order.price).unwrap().push(order.id);
+                if self.bids.contains_key(&order.order.price) {
+                    self.bids.get_mut(&order.order.price).unwrap().push(order.id);
                 } else {
                     let mut orders: Vec<u32> = Vec::new();
                     orders.push(order.id);
-                    self.bids.insert(order.price.clone(), orders);
+                    self.bids.insert(order.order.price.clone(), orders);
                 }
             }
             Side::Ask => {
-                if self.asks.contains_key(&order.price) {
-                    self.asks.get_mut(&order.price).unwrap().push(order.id);
+                if self.asks.contains_key(&order.order.price) {
+                    self.asks.get_mut(&order.order.price).unwrap().push(order.id);
                 } else {
                     let mut orders: Vec<u32> = Vec::new();
                     orders.push(order.id);
-                    self.asks.insert(order.price.clone(), orders);
+                    self.asks.insert(order.order.price.clone(), orders);
                 }
             }
         }
     }
 
     fn match_order(&mut self, order: &mut Order) {
-        match &order.side {
+        match &order.order.side {
             Side::Bid => {
                 let best_ask_id = self.get_best_ask();
                 let mut best_ask = self.orders.get_mut(&best_ask_id).unwrap();
-                if (order.order_type == Type::Limit && best_ask.price <= order.price)
-                    || order.order_type == Type::Market
+                if (order.order.order_type == Type::Limit && best_ask.order.price <= order.order.price)
+                    || order.order.order_type == Type::Market
                 {
-                    if best_ask.quantity > 0 {
-                        if best_ask.quantity > order.quantity {
-                            best_ask.quantity -= order.quantity;
-                            order.quantity = 0;
+                    if best_ask.order.quantity > 0 {
+                        if best_ask.order.quantity > order.order.quantity {
+                            best_ask.order.quantity -= order.order.quantity;
+                            order.order.quantity = 0;
                         } else {
-                            order.quantity -= best_ask.quantity;
+                            order.order.quantity -= best_ask.order.quantity;
                             self.asks.pop_first();
                             self.remove_order(&order);
                         }
@@ -126,18 +128,18 @@ impl OrderBook {
                 }
             }
             Side::Ask => {
-                while order.quantity != 0 && !self.bids.is_empty() {
+                while order.order.quantity != 0 && !self.bids.is_empty() {
                     let best_bid_id = self.get_best_bid();
                     let mut best_bid = self.orders.get_mut(&best_bid_id).unwrap();
-                    if (order.order_type == Type::Limit && best_bid.price >= order.price)
-                        || order.order_type == Type::Market
+                    if (order.order.order_type == Type::Limit && best_bid.order.price >= order.order.price)
+                        || order.order.order_type == Type::Market
                     {
-                        if best_bid.quantity > 0 {
-                            if best_bid.quantity > order.quantity {
-                                best_bid.quantity -= order.quantity;
-                                order.quantity = 0;
+                        if best_bid.order.quantity > 0 {
+                            if best_bid.order.quantity > order.order.quantity {
+                                best_bid.order.quantity -= order.order.quantity;
+                                order.order.quantity = 0;
                             } else {
-                                order.quantity -= best_bid.quantity;
+                                order.order.quantity -= best_bid.order.quantity;
                                 self.bids.pop_last();
                                 self.remove_order(&order);
                             }
@@ -184,7 +186,7 @@ impl Display for OrderBook {
             let _ = write!(f, "\t{}:\n", price.as_float());
             for order in orders {
                 let order = self.orders.get(order).unwrap();
-                let _ = write!(f, "\t\tid: {}; quantity: {}\n", order.id, order.quantity);
+                let _ = write!(f, "\t\tid: {}; quantity: {}\n", order.id, order.order.quantity);
             }
         }
 
@@ -193,7 +195,7 @@ impl Display for OrderBook {
             let _ = write!(f, "\t{}:\n", price.as_float());
             for order in orders {
                 let order = self.orders.get(order).unwrap();
-                let _ = write!(f, "\t\tid: {}; quantity: {}\n", order.id, order.quantity);
+                let _ = write!(f, "\t\tid: {}; quantity: {}\n", order.id, order.order.quantity);
             }
         }
 

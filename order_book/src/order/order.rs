@@ -15,9 +15,7 @@ pub enum Type {
 }
 
 #[derive(Clone)]
-pub struct Order {
-    pub id: u32,
-
+pub struct OrderReq {
     pub order_type: Type,
     pub side: Side,
 
@@ -26,14 +24,25 @@ pub struct Order {
     pub quantity: u32,
 }
 
-impl Order {
-    pub fn new(order_type: Type, side: Side, price: f64, quantity: u32) -> Order {
-        Order {
-            id: random::<u32>(),
+#[derive(Clone)]
+pub struct Order {
+    pub id: u32,
+    pub order: OrderReq,
+}
+
+impl OrderReq {
+    pub fn new(order_type: Type, side: Side, price: f64, quantity: u32) -> OrderReq {
+        OrderReq {
             order_type,
             side,
             price: Price::from(price),
             quantity
         }
+    }
+}
+
+impl Order {
+    pub fn new(orderReq: OrderReq) -> Order {
+        Order { id: rand::random::<u32>(), order: orderReq }
     }
 }
