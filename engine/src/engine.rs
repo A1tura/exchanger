@@ -29,7 +29,7 @@ impl Engine {
         }
     }
 
-    pub fn handle_event(&mut self, event: Event) -> Result<EngineEvent, EngineError> {
+    pub fn handle_event(&mut self, event: Event) -> Result<Vec<EngineEvent>, EngineError> {
         match event {
             Event::NewOrder { symbol, order_req } => self.new_order(symbol, order_req),
             Event::CancelOrder { symbol, order_id } => self.cancel_order(symbol, order_id),
@@ -41,30 +41,84 @@ impl Engine {
         &mut self,
         symbol: String,
         order_req: OrderReq,
-    ) -> Result<EngineEvent, EngineError> {
+    ) -> Result<Vec<EngineEvent>, EngineError> {
+        let mut events: Vec<EngineEvent> = Vec::new();
+
         let ob = self.get_book(&symbol)?;
-        let order_id = ob.submit_order(&order_req);
-        return Ok(EngineEvent::OrderAccepted { order_id });
+        let (order_id, trades) = ob.submit_order(&order_req);
+
+        events.push(EngineEvent::OrderAccepted { order_id });
+
+        if let Some(trades) = trades {
+            for trade in trades.iter() {
+                events.push(EngineEvent::Trade {
+                    maker_order_id: trade.maker,
+                    taker_order_id: trade.taker,
+                    price: trade.price.clone(),
+                    quantity: trade.quantity,
+                });
+
+                let maker = ob.get_order(&trade.maker);
+                let taker = ob.get_order(&trade.taker);
+
+                match maker {
+                    Ok(order) => {
+                        events.push(EngineEvent::OrderPartiallyFilled {
+                            order_id: order.id,
+                            remaining: trade.quantity - order.order.quantity,
+                        });
+                    }
+                    Err(_) => {
+                        events.push(EngineEvent::OrderFilled {
+                            order_id: trade.maker,
+                        });
+                    }
+                }
+
+                match taker {
+                    Ok(order) => {
+                        events.push(EngineEvent::OrderPartiallyFilled {
+                            order_id: order.id,
+                            remaining: trade.quantity - order.order.quantity,
+                        });
+                    }
+                    Err(_) => {
+                        events.push(EngineEvent::OrderFilled { order_id: trade.taker });
+                    }
+                }
+            }
+        }
+
+        return Ok(events);
     }
 
     fn get_snapshot(
         &mut self,
         symbol: String,
         depth: Option<usize>,
-    ) -> Result<EngineEvent, EngineError> {
+    ) -> Result<Vec<EngineEvent>, EngineError> {
+        let mut events: Vec<EngineEvent> = Vec::new();
         let ob = self.get_book(&symbol)?;
 
         let snapshot = ob.snapshot(depth);
+        events.push(EngineEvent::BookSnapshot { snapshot });
 
-        return Ok(EngineEvent::BookSnapshot { snapshot });
+        return Ok(events);
     }
 
-    fn cancel_order(&mut self, symbol: String, order_id: u32) -> Result<EngineEvent, EngineError> {
+    fn cancel_order(
+        &mut self,
+        symbol: String,
+        order_id: u32,
+    ) -> Result<Vec<EngineEvent>, EngineError> {
+        let mut events: Vec<EngineEvent> = Vec::new();
         let ob = self.get_book(&symbol)?;
 
         match ob.cancel_order(&order_id) {
-            Ok(_) => return Ok(EngineEvent::OrderCancelled { order_id }),
+            Ok(_) => events.push(EngineEvent::OrderCancelled { order_id }),
             Err(err) => return Err(EngineError::OrderBookError(err)),
-        }
+        };
+
+        return Ok(events);
     }
 }

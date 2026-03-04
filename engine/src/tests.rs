@@ -12,32 +12,53 @@ mod tests {
         let mut engine = Engine::new();
         engine.new_book("SYMBL".to_string());
 
-        match engine
+        let ask_events = engine
             .handle_event(Event::NewOrder {
                 symbol: "SYMBL".to_string(),
                 order_req: OrderReq::new(Type::Limit, Side::Ask, 10.00, 100),
             })
-            .unwrap()
-        {
-            EngineEvent::OrderAccepted { order_id } => order_id,
-            _ => return,
-        };
+            .unwrap();
 
-        let snapshot = match engine
-            .handle_event(Event::GetSnapshot {
+        let bid_events = engine
+            .handle_event(Event::NewOrder {
                 symbol: "SYMBL".to_string(),
-                depth: None,
+                order_req: OrderReq::new(Type::Limit, Side::Bid, 10.00, 100),
             })
-            .unwrap()
-        {
-            EngineEvent::BookSnapshot { snapshot } => snapshot,
-            _ => return,
+            .unwrap();
+
+        let maker_id = match ask_events[0] {
+            EngineEvent::OrderAccepted { order_id } => order_id,
+            _ => panic!("Expected OrderAccepted"),
         };
 
-        assert!(snapshot.bids.is_empty());
-        assert_eq!(snapshot.asks.len(), 1);
+        let taker_id = match bid_events[0] {
+            EngineEvent::OrderAccepted { order_id } => order_id,
+            _ => panic!("Expected OrderAccepted"),
+        };
 
-        assert_eq!(snapshot.asks[0].total_quantity, 100);
+        match &bid_events[1] {
+            EngineEvent::Trade { maker_order_id, taker_order_id, price, quantity }  => {
+                assert_eq!(*maker_order_id, maker_id);
+                assert_eq!(*taker_order_id, taker_id);
+                assert_eq!(price.as_float(), 10.00);
+                assert_eq!(*quantity, 100)
+            },
+            _ => panic!("Expected Trade"),
+        }
+
+        match &bid_events[2] {
+            EngineEvent::OrderFilled { order_id } => {
+                assert_eq!(*order_id, maker_id);
+            },
+            _ => panic!("Expected OrderFilled"),
+        }
+
+
+        match &bid_events[3] {
+            EngineEvent::OrderFilled { order_id } => {
+                assert_eq!(*order_id, taker_id);
+            },
+            _ => panic!("Expected OrderFilled"),
+        }
     }
 }
-
