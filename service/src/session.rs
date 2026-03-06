@@ -1,4 +1,5 @@
 
+#[derive(Clone)]
 pub struct Session {
     pub seq_num: u32,
 }
