@@ -32,8 +32,16 @@ impl Engine {
     pub fn handle_event(&mut self, event: Event) -> Result<Vec<EngineEvent>, EngineError> {
         match event {
             Event::NewOrder { symbol, order_req } => self.new_order(symbol, order_req),
-            Event::CancelOrder { symbol, order_id } => self.cancel_order(symbol, order_id),
-            Event::GetSnapshot { symbol, depth } => self.get_snapshot(symbol, depth),
+            Event::CancelOrder {
+                symbol,
+                order_id,
+                client_id,
+            } => self.cancel_order(symbol, order_id, client_id),
+            Event::GetSnapshot {
+                symbol,
+                depth,
+                client_id,
+            } => self.get_snapshot(symbol, depth, client_id),
         }
     }
 
@@ -47,12 +55,17 @@ impl Engine {
         let ob = self.get_book(&symbol)?;
         let (order_id, trades) = ob.submit_order(&order_req);
 
-        events.push(EngineEvent::OrderAccepted { order_id });
+        events.push(EngineEvent::OrderAccepted {
+            client_id: order_req.client_id,
+            order_id,
+        });
 
         if let Some(trades) = trades {
             for trade in trades.iter() {
                 events.push(EngineEvent::Trade {
+                    maker_client_id: trade.maker_client_id,
                     maker_order_id: trade.maker,
+                    taker_client_id: trade.taker_client_id,
                     taker_order_id: trade.taker,
                     price: trade.price.clone(),
                     quantity: trade.quantity,
@@ -64,12 +77,14 @@ impl Engine {
                 match maker {
                     Ok(order) => {
                         events.push(EngineEvent::OrderPartiallyFilled {
+                            client_id: order.order.client_id,
                             order_id: order.id,
                             remaining: trade.quantity - order.order.quantity,
                         });
                     }
                     Err(_) => {
                         events.push(EngineEvent::OrderFilled {
+                            client_id: trade.maker_client_id,
                             order_id: trade.maker,
                         });
                     }
@@ -78,12 +93,16 @@ impl Engine {
                 match taker {
                     Ok(order) => {
                         events.push(EngineEvent::OrderPartiallyFilled {
+                            client_id: order.order.client_id,
                             order_id: order.id,
                             remaining: trade.quantity - order.order.quantity,
                         });
                     }
                     Err(_) => {
-                        events.push(EngineEvent::OrderFilled { order_id: trade.taker });
+                        events.push(EngineEvent::OrderFilled {
+                            client_id: order_req.client_id,
+                            order_id: trade.taker,
+                        });
                     }
                 }
             }
@@ -96,12 +115,16 @@ impl Engine {
         &mut self,
         symbol: String,
         depth: Option<usize>,
+        client_id: u32,
     ) -> Result<Vec<EngineEvent>, EngineError> {
         let mut events: Vec<EngineEvent> = Vec::new();
         let ob = self.get_book(&symbol)?;
 
         let snapshot = ob.snapshot(depth);
-        events.push(EngineEvent::BookSnapshot { snapshot });
+        events.push(EngineEvent::BookSnapshot {
+            client_id,
+            snapshot,
+        });
 
         return Ok(events);
     }
@@ -110,12 +133,16 @@ impl Engine {
         &mut self,
         symbol: String,
         order_id: u32,
+        client_id: u32,
     ) -> Result<Vec<EngineEvent>, EngineError> {
         let mut events: Vec<EngineEvent> = Vec::new();
         let ob = self.get_book(&symbol)?;
 
         match ob.cancel_order(&order_id) {
-            Ok(_) => events.push(EngineEvent::OrderCancelled { order_id }),
+            Ok(_) => events.push(EngineEvent::OrderCancelled {
+                client_id,
+                order_id,
+            }),
             Err(err) => return Err(EngineError::OrderBookError(err)),
         };
 
