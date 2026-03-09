@@ -1,14 +1,11 @@
-use std::{collections::HashMap, sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard}};
+use std::collections::HashMap;
 
-use order_book::{
-    order::{Order, OrderReq},
-    order_book::{OrderBook, OrderBookErrors},
-};
+use order_book::{order::OrderReq, order_book::OrderBook};
 
 use crate::events::{EngineError, EngineEvent, Event};
 
 pub struct Engine {
-    books: HashMap<String, Arc<RwLock<OrderBook>>>,
+    books: HashMap<String, OrderBook>,
 }
 
 impl Engine {
@@ -19,33 +16,12 @@ impl Engine {
     }
 
     pub fn new_book(&mut self, symbol: String) {
-        self.books.insert(symbol, Arc::new(RwLock::new(OrderBook::new())));
+        self.books.insert(symbol, OrderBook::new());
     }
 
-    fn get_mut_book(&mut self, symbol: &String) -> Result<RwLockWriteGuard<OrderBook>, EngineError> {
+    fn get_book(&mut self, symbol: &String) -> Result<&mut OrderBook, EngineError> {
         match self.books.get_mut(symbol) {
-            Some(book) => {
-                let ob = match book.write() {
-                    Ok(book) => Ok(book),
-                    Err(_) => Err(EngineError::InvalidBook),
-                };
-
-                return ob;
-            },
-            None => return Err(EngineError::InvalidBook),
-        }
-    }
-
-    fn get_read_book(&mut self, symbol: &String) -> Result<RwLockReadGuard<OrderBook>, EngineError> {
-        match self.books.get_mut(symbol) {
-            Some(book) => {
-                let ob = match book.read() {
-                    Ok(book) => Ok(book),
-                    Err(_) => Err(EngineError::InvalidBook),
-                };
-
-                return ob;
-            }
+            Some(book) => return Ok(book),
             None => return Err(EngineError::InvalidBook),
         }
     }
@@ -73,7 +49,7 @@ impl Engine {
     ) -> Result<Vec<EngineEvent>, EngineError> {
         let mut events: Vec<EngineEvent> = Vec::new();
 
-        let mut ob = self.get_mut_book(&symbol)?;
+        let ob = self.get_book(&symbol)?;
         let (order_id, trades) = ob.submit_order(&order_req);
 
         events.push(EngineEvent::OrderAccepted {
@@ -139,7 +115,7 @@ impl Engine {
         client_id: u32,
     ) -> Result<Vec<EngineEvent>, EngineError> {
         let mut events: Vec<EngineEvent> = Vec::new();
-        let ob = self.get_mut_book(&symbol)?;
+        let ob = self.get_book(&symbol)?;
 
         let snapshot = ob.snapshot(depth);
         events.push(EngineEvent::BookSnapshot {
@@ -157,7 +133,7 @@ impl Engine {
         client_id: u32,
     ) -> Result<Vec<EngineEvent>, EngineError> {
         let mut events: Vec<EngineEvent> = Vec::new();
-        let mut ob = self.get_mut_book(&symbol)?;
+        let ob = self.get_book(&symbol)?;
 
         match ob.cancel_order(&order_id) {
             Ok(_) => events.push(EngineEvent::OrderCancelled {
