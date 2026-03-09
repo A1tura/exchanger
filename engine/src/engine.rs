@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::{Arc, RwLock}};
 
 use order_book::{
     order::{Order, OrderReq},
@@ -8,7 +8,7 @@ use order_book::{
 use crate::events::{EngineError, EngineEvent, Event};
 
 pub struct Engine {
-    books: HashMap<String, OrderBook>,
+    books: HashMap<String, Arc<RwLock<OrderBook>>>,
 }
 
 impl Engine {
@@ -19,10 +19,10 @@ impl Engine {
     }
 
     pub fn new_book(&mut self, symbol: String) {
-        self.books.insert(symbol, OrderBook::new());
+        self.books.insert(symbol, Arc::new(RwLock::new(OrderBook::new())));
     }
 
-    fn get_book(&mut self, symbol: &String) -> Result<&mut OrderBook, EngineError> {
+    fn get_book(&mut self, symbol: &String) -> Result<&mut Arc<RwLock<OrderBook>>, EngineError> {
         match self.books.get_mut(symbol) {
             Some(book) => return Ok(book),
             None => return Err(EngineError::InvalidBook),
@@ -52,7 +52,7 @@ impl Engine {
     ) -> Result<Vec<EngineEvent>, EngineError> {
         let mut events: Vec<EngineEvent> = Vec::new();
 
-        let ob = self.get_book(&symbol)?;
+        let mut ob = self.get_book(&symbol)?.write().unwrap();
         let (order_id, trades) = ob.submit_order(&order_req);
 
         events.push(EngineEvent::OrderAccepted {
@@ -118,7 +118,7 @@ impl Engine {
         client_id: u32,
     ) -> Result<Vec<EngineEvent>, EngineError> {
         let mut events: Vec<EngineEvent> = Vec::new();
-        let ob = self.get_book(&symbol)?;
+        let ob = self.get_book(&symbol)?.write().unwrap();
 
         let snapshot = ob.snapshot(depth);
         events.push(EngineEvent::BookSnapshot {
@@ -136,7 +136,7 @@ impl Engine {
         client_id: u32,
     ) -> Result<Vec<EngineEvent>, EngineError> {
         let mut events: Vec<EngineEvent> = Vec::new();
-        let ob = self.get_book(&symbol)?;
+        let mut ob = self.get_book(&symbol)?.write().unwrap();
 
         match ob.cancel_order(&order_id) {
             Ok(_) => events.push(EngineEvent::OrderCancelled {
