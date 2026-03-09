@@ -14,14 +14,14 @@ mod tests {
 
         let ask_events = engine
             .handle_event(Event::NewOrder {
-                symbol: "SYMBL".to_string(),
+                symbol_id: 1,
                 order_req: OrderReq::new(1, Type::Limit, Side::Ask, 10.00, 100),
             })
             .unwrap();
 
         let bid_events = engine
             .handle_event(Event::NewOrder {
-                symbol: "SYMBL".to_string(),
+                symbol_id: 1,
                 order_req: OrderReq::new(2, Type::Limit, Side::Bid, 10.00, 100),
             })
             .unwrap();
@@ -37,7 +37,9 @@ mod tests {
         };
 
         match &bid_events[1] {
-            EngineEvent::Trade { maker_order_id, taker_order_id, price, quantity, maker_client_id, taker_client_id }  => {
+            EngineEvent::Trade {symbol_id, maker_order_id, taker_order_id, price, quantity, maker_client_id, taker_client_id }  => {
+                assert_eq!(*symbol_id, 1);
+
                 assert_eq!(*maker_client_id, 1);
                 assert_eq!(*taker_client_id, 2);
 
@@ -50,7 +52,9 @@ mod tests {
         }
 
         match &bid_events[2] {
-            EngineEvent::OrderFilled { client_id, order_id } => {
+            EngineEvent::OrderFilled {symbol_id, client_id, order_id } => {
+                assert_eq!(*symbol_id, 1);
+
                 assert_eq!(*client_id, 1);
                 assert_eq!(*order_id, maker_id);
             },
@@ -59,7 +63,8 @@ mod tests {
 
 
         match &bid_events[3] {
-            EngineEvent::OrderFilled { client_id, order_id } => {
+            EngineEvent::OrderFilled { symbol_id, client_id, order_id } => {
+                assert_eq!(*symbol_id, 1);
                 assert_eq!(*client_id, 2);
                 assert_eq!(*order_id, taker_id);
             },
