@@ -2,8 +2,8 @@ use crate::order::Price;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Side {
-    Bid,
-    Ask,
+    Bid = 1,
+    Ask = 2,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]

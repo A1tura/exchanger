@@ -12,7 +12,10 @@ use router::Router;
 
 use tokio::net::TcpListener;
 
-use engine::{engine::Engine, events::{EngineEvent, Event}};
+use engine::{
+    engine::Engine,
+    events::{EngineEvent, Event},
+};
 
 use crate::{router::SharedRouter, transport::Connection};
 
@@ -25,22 +28,22 @@ async fn main() {
     let (order_book_tx, mut order_book_rx) = tokio::sync::mpsc::channel::<Event>(1024);
     let (feed_tx, _) = tokio::sync::broadcast::channel::<Vec<EngineEvent>>(4096);
 
+    tokio::spawn(mcast::run(feed_tx.clone()));
+
     let router_clone = router.clone();
     let feed_tx_clone = feed_tx.clone();
     tokio::spawn(async move {
-        engine.new_book("INTC".to_string());
+        let mut events = Vec::new();
+        events.push(engine.new_book("INTC"));
+        let _ = feed_tx_clone.send(events);
+
         while let Some(req) = order_book_rx.recv().await {
-            let events = engine.handle_event(req).unwrap();
             let mut router = router_clone.write().await;
+            let events = engine.handle_event(req).unwrap();
 
             router.route_events(&events).await;
             let _ = feed_tx_clone.send(events);
         }
-    });
-
-    let feed_tx = feed_tx.clone();
-    tokio::spawn(async move {
-        mcast::run(feed_tx).await;
     });
 
     loop {

@@ -46,6 +46,37 @@ impl OrderBook {
         }
     }
 
+    pub fn get_price_level(&self, side: &Side, price: &Price) -> Option<Level> {
+        let get_level = |ids: Option<&VecDeque<u32>>| -> Option<Level> {
+            if let Some(ids) = ids {
+                let mut level = Level {
+                    price: price.as_float(),
+                    total_quantity: 0,
+                };
+
+                for id in ids {
+                    let order = self.orders.get(id).unwrap();
+                    level.total_quantity += order.order.quantity;
+                }
+
+                return Some(level)
+            } else {
+                return None;
+            }
+        };
+
+        match side {
+            Side::Bid => {
+                let bids = self.bids.get(&price);
+                return get_level(bids)
+            }
+            Side::Ask => {
+                let asks = self.asks.get(&price);
+                return get_level(asks)
+            }
+        }
+    }
+
     pub fn snapshot(&self, depth: Option<usize>) -> Snapshot {
         let mut snapshot = Snapshot {
             bids: Vec::new(),

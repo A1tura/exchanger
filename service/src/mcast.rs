@@ -16,8 +16,9 @@ pub async fn run(feed_tx: broadcast::Sender<Vec<EngineEvent>>) {
             let (event_bytes, event_type) = &utils::engine_event_as_bytes(&event);
             let mut buf: Vec<u8> = Vec::new();
 
+
             buf.push(*event_type as u8);
-            buf.write_all(event_bytes);
+            let _ = buf.write_all(event_bytes);
             let _ = socket.send_to(buf.as_slice(), multicast_addr).await;
         }
     }

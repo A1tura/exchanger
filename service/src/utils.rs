@@ -131,6 +131,32 @@ pub fn engine_event_as_bytes(engine_event: &EngineEvent) -> (BytesMut, MessageTy
 
             return (buf, MessageType::Trade);
         }
+        EngineEvent::PriceLevel {
+            symbol_id,
+            side,
+            price,
+            quantity,
+        } => {
+            engine_messages::PriceLevel {
+                symbol_id: *symbol_id,
+                side: *side,
+                price: *price,
+                quantity: *quantity,
+            }
+            .encode(&mut buf);
+            return (buf, MessageType::PriceLevel);
+        }
+        EngineEvent::NewSymbol {
+            ticker,
+            symbol_id,
+        } => {
+            engine_messages::NewSymbol {
+                ticker: *ticker,
+                symbol_id: *symbol_id,
+            }
+            .encode(&mut buf);
+            return (buf, MessageType::NewSymbol);
+        }
         _ => todo!(),
     }
 }
