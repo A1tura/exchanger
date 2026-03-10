@@ -1,9 +1,12 @@
 FROM rust:latest
 
 WORKDIR /usr/src/app
-COPY . .
+COPY ../engine .
+COPY ../order_book .
 
 WORKDIR /usr/src/app/service
-RUN cargo install --path .
+COPY . .
+
+RUN cargo install --path ./service
 
 CMD ["service"]

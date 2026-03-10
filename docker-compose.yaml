@@ -3,4 +3,12 @@ services:
     container_name: engine
     network_mode: host
     build:
-      context: "./"
+      context: .
+      dockerfile: service/Dockerfile
+
+  mdp:
+    container_name: mdp
+    network_mode: host
+    build:
+      context: .
+      dockerfile: mdp/Dockerfile
